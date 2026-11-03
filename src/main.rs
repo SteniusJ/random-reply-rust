@@ -1,18 +1,16 @@
 use dotenv;
-use rand::random;
 use serenity::all::ReactionType;
 use serenity::async_trait;
 use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
-use serenity::model::{
-    application::{Command, Interaction},
-    channel::Message,
-    gateway::Ready,
-    id::GuildId,
-};
+use serenity::model::{application::Interaction, channel::Message, gateway::Ready, id::GuildId};
 use serenity::prelude::*;
 use std::env;
 
 mod commands;
+mod db;
+mod util;
+
+use util::dice_roll;
 
 // Variable default constants
 //
@@ -20,13 +18,14 @@ mod commands;
 const REPLY_CHANCE: u8 = 6;
 const REACT_CHANCE: u8 = 3;
 
-struct Handler {
+struct Handler<'a> {
     reply_chance: u8,
     react_chance: u8,
+    db_host: db::Db_Host<'a>,
 }
 
 #[async_trait]
-impl EventHandler for Handler {
+impl<'a> EventHandler for Handler<'a> {
     async fn message(&self, ctx: Context, msg: Message) {
         // Ignore all bot sent messages
         if msg.author.bot {
@@ -35,33 +34,40 @@ impl EventHandler for Handler {
 
         // If mentioned always reply
         if msg.mentions_me(&ctx.http).await.unwrap_or(false) {
-            if let Err(e) = msg.reply(&ctx.http, "This is a reply to mention").await {
-                println!("Error sending reply: {e:?}");
+            if let Ok(reply) = self.db_host.get_rand_reply().await {
+                if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
+                    println!("Error sending reply: {e:?}");
+                }
+                return;
             }
-            return;
+            println!("DB Error");
         }
 
         // Reply if diceroll succeeds
         if dice_roll(self.reply_chance) {
-            if let Err(e) = msg.reply(&ctx.http, "This is a reply by chance").await {
-                println!("Error sending message: {e:?}");
+            if let Ok(reply) = self.db_host.get_rand_reply().await {
+                if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
+                    println!("Error sending message: {e:?}");
+                }
             }
+            println!("DB Error");
         }
         // React if diceroll succeeds
         if dice_roll(self.react_chance) {
-            if let Err(e) = msg
-                .react(&ctx.http, ReactionType::Unicode("emoji".to_string()))
-                .await
-            {
-                println!("Error reacting: {e:?}");
+            if let Ok(reply) = self.db_host.get_rand_reaction().await {
+                if let Err(e) = msg.react(&ctx.http, ReactionType::Unicode(reply)).await {
+                    println!("Error reacting: {e:?}");
+                }
+                return;
             }
+            println!("DB Error");
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::Command(command) = interaction {
             let content = match command.data.name.as_str() {
-                "game" => Some(commands::game::run(&command.data.options())),
+                "game" => commands::game::run(&command.data.options(), &self.db_host).await,
                 "gregflip" => Some(commands::gregflip::run(&command.data.options())),
                 _ => None,
             };
@@ -105,6 +111,9 @@ async fn main() {
         env::var("REPLY_CHANCE").map_or(REPLY_CHANCE, |v| v.parse().unwrap_or(REPLY_CHANCE));
     let react_chance =
         env::var("REACT_CHANCE").map_or(REACT_CHANCE, |v| v.parse().unwrap_or(REACT_CHANCE));
+    let db_url = env::var("DB_URL").expect("Expected database url 'DB_URL' in env");
+    let db_password = env::var("DB_PASSWORD").expect("Expected db password 'DB_PASSWORD' in env");
+
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MEMBERS
@@ -114,6 +123,7 @@ async fn main() {
         .event_handler(Handler {
             reply_chance,
             react_chance,
+            db_host: db::Db_Host::new(db_url.leak(), db_password.leak()),
         })
         .await
         .expect("Err creating client");
@@ -121,8 +131,4 @@ async fn main() {
     if let Err(e) = client.start().await {
         println!("Client error: {e:?}");
     }
-}
-
-fn dice_roll(size: u8) -> bool {
-    (random::<f32>() * size as f32).floor() == 1.0
 }
