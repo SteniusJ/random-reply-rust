@@ -16,12 +16,12 @@ use util::dice_roll;
 //
 // Default values for reply/react, 1 in N chance
 const REPLY_CHANCE: u8 = 6;
-const REACT_CHANCE: u8 = 3;
+const REACT_CHANCE: u8 = 9;
 
 struct Handler<'a> {
     reply_chance: u8,
     react_chance: u8,
-    db_host: db::Db_Host<'a>,
+    db_host: db::DbHost<'a>,
 }
 
 #[async_trait]
@@ -69,6 +69,14 @@ impl<'a> EventHandler for Handler<'a> {
             let content = match command.data.name.as_str() {
                 "game" => commands::game::run(&command.data.options(), &self.db_host).await,
                 "gregflip" => Some(commands::gregflip::run(&command.data.options())),
+                "set_reply_chance" => Some(commands::set_reply_chance::run(
+                    &command.data.options(),
+                    &mut self.reply_chance,
+                )),
+                "set_react_chance" => Some(commands::set_react_chance::run(
+                    &command.data.options(),
+                    &mut self.react_chance,
+                )),
                 _ => None,
             };
 
@@ -95,7 +103,12 @@ impl<'a> EventHandler for Handler<'a> {
         let commands = guild_id
             .set_commands(
                 &ctx.http,
-                vec![commands::game::register(), commands::gregflip::register()],
+                vec![
+                    commands::game::register(),
+                    commands::gregflip::register(),
+                    commands::set_reply_chance::register(),
+                    commands::set_react_chance::register(),
+                ],
             )
             .await;
         println!("Created the following slash commands: {commands:#?}");
@@ -106,7 +119,7 @@ impl<'a> EventHandler for Handler<'a> {
 async fn main() {
     dotenv::dotenv().expect("Failed to read .env file");
 
-    let token = env::var("DISCORD_TOKEN").expect("Expected bot token");
+    let token = env::var("DISCORD_TOKEN").expect("Expected bot token 'DISCORD_TOKEN' in env");
     let reply_chance =
         env::var("REPLY_CHANCE").map_or(REPLY_CHANCE, |v| v.parse().unwrap_or(REPLY_CHANCE));
     let react_chance =
@@ -123,7 +136,7 @@ async fn main() {
         .event_handler(Handler {
             reply_chance,
             react_chance,
-            db_host: db::Db_Host::new(db_url.leak(), db_password.leak()),
+            db_host: db::DbHost::new(db_url.leak(), db_password.leak()),
         })
         .await
         .expect("Err creating client");

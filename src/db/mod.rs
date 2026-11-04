@@ -3,45 +3,45 @@ use core::fmt;
 use reqwest;
 use serde_json::Value;
 
-pub struct Db_Host<'a> {
+pub struct DbHost<'a> {
     host: &'a str,
     reqwest_client: reqwest::Client,
 }
 
-pub enum Db_Error {
+pub enum DbError {
     ReqwestError(reqwest::Error),
     JsonError(serde_json::Error),
     Err(String),
 }
 
-impl From<reqwest::Error> for Db_Error {
+impl From<reqwest::Error> for DbError {
     fn from(error: reqwest::Error) -> Self {
         Self::ReqwestError(error)
     }
 }
 
-impl From<serde_json::Error> for Db_Error {
+impl From<serde_json::Error> for DbError {
     fn from(error: serde_json::Error) -> Self {
         Self::JsonError(error)
     }
 }
 
-impl fmt::Debug for Db_Error {
+impl fmt::Debug for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Db_Error: {:?}", self)
     }
 }
 
-impl<'a> Db_Host<'a> {
+impl<'a> DbHost<'a> {
     pub fn new(url: &'a str, password: &'a str) -> Self {
-        Db_Host {
+        Self {
             // leaking here is fine since this str lives for the rest of the programs lifetime
             host: format!("{}?password={}", url, password).leak(),
             reqwest_client: reqwest::Client::new(),
         }
     }
 
-    pub async fn get_rand_reply(&self) -> Result<String, Db_Error> {
+    pub async fn get_rand_reply(&self) -> Result<String, DbError> {
         let res = self
             .reqwest_client
             .post(self.host)
@@ -50,7 +50,7 @@ impl<'a> Db_Host<'a> {
             .await?;
 
         if !res.status().is_success() {
-            return Err(Db_Error::Err(format!(
+            return Err(DbError::Err(format!(
                 "DB didn't return OK, code: {}",
                 res.status().as_str()
             )));
@@ -60,7 +60,7 @@ impl<'a> Db_Host<'a> {
         return Ok(parsed["data"][0]["reply_message"].to_string());
     }
 
-    pub async fn get_rand_reaction(&self) -> Result<String, Db_Error> {
+    pub async fn get_rand_reaction(&self) -> Result<String, DbError> {
         let res = self
             .reqwest_client
             .post(self.host)
@@ -69,7 +69,7 @@ impl<'a> Db_Host<'a> {
             .await?;
 
         if !res.status().is_success() {
-            return Err(Db_Error::Err(format!(
+            return Err(DbError::Err(format!(
                 "DB didn't return OK, code: {}",
                 res.status().as_str()
             )));
@@ -79,7 +79,7 @@ impl<'a> Db_Host<'a> {
         return Ok(parsed["data"][0]["react_emoji"].to_string());
     }
 
-    pub async fn get_rand_game(&self) -> Result<String, Db_Error> {
+    pub async fn get_rand_game(&self) -> Result<String, DbError> {
         let res = self
             .reqwest_client
             .post(self.host)
@@ -88,7 +88,7 @@ impl<'a> Db_Host<'a> {
             .await?;
 
         if !res.status().is_success() {
-            return Err(Db_Error::Err(format!(
+            return Err(DbError::Err(format!(
                 "DB didn't return OK, code: {}",
                 res.status().as_str()
             )));
