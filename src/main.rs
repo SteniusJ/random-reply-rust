@@ -18,64 +18,77 @@ use util::dice_roll;
 const REPLY_CHANCE: u8 = 6;
 const REACT_CHANCE: u8 = 9;
 
+struct BotState;
+
+impl TypeMapKey for BotState {
+    // (reply_chance, react_chance)
+    type Value = (u8, u8);
+}
+
 struct Handler<'a> {
-    reply_chance: u8,
-    react_chance: u8,
     db_host: db::DbHost<'a>,
 }
 
 #[async_trait]
 impl<'a> EventHandler for Handler<'a> {
     async fn message(&self, ctx: Context, msg: Message) {
-        // Ignore all bot sent messages
-        if msg.author.bot {
-            return;
-        }
+        let data = ctx.data.read().await;
 
-        // If mentioned always reply
-        if msg.mentions_me(&ctx.http).await.unwrap_or(false) {
-            if let Ok(reply) = self.db_host.get_rand_reply().await {
-                if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
-                    println!("Error sending reply: {e:?}");
-                }
+        if let Some((reply_chance, react_chance)) = data.get::<BotState>() {
+            // Ignore all bot sent messages
+            if msg.author.bot {
                 return;
             }
-            println!("DB Error");
-        }
 
-        // Reply if diceroll succeeds
-        if dice_roll(self.reply_chance) {
-            if let Ok(reply) = self.db_host.get_rand_reply().await {
-                if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
-                    println!("Error sending message: {e:?}");
+            // If mentioned always reply
+            if msg.mentions_me(&ctx.http).await.unwrap_or(false) {
+                if let Ok(reply) = self.db_host.get_rand_reply().await {
+                    if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
+                        println!("Error sending reply: {e:?}");
+                    }
+                    return;
                 }
+                println!("DB Error");
             }
-            println!("DB Error");
-        }
-        // React if diceroll succeeds
-        if dice_roll(self.react_chance) {
-            if let Ok(reply) = self.db_host.get_rand_reaction().await {
-                if let Err(e) = msg.react(&ctx.http, ReactionType::Unicode(reply)).await {
-                    println!("Error reacting: {e:?}");
+
+            // Reply if diceroll succeeds
+            if dice_roll(reply_chance) {
+                if let Ok(reply) = self.db_host.get_rand_reply().await {
+                    if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
+                        println!("Error sending message: {e:?}");
+                    }
                 }
-                return;
+                println!("DB Error");
             }
-            println!("DB Error");
+            // React if diceroll succeeds
+            if dice_roll(react_chance) {
+                if let Ok(reply) = self.db_host.get_rand_reaction().await {
+                    if let Err(e) = msg.react(&ctx.http, ReactionType::Unicode(reply)).await {
+                        println!("Error reacting: {e:?}");
+                    }
+                    return;
+                }
+                println!("DB Error");
+            }
         }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::Command(command) = interaction {
+        let mut data = ctx.data.write().await;
+
+        if let (Interaction::Command(command), Some((reply_chance, react_chance))) =
+            (interaction, data.get_mut::<BotState>())
+        {
             let content = match command.data.name.as_str() {
                 "game" => commands::game::run(&command.data.options(), &self.db_host).await,
                 "gregflip" => Some(commands::gregflip::run(&command.data.options())),
                 "set_reply_chance" => Some(commands::set_reply_chance::run(
                     &command.data.options(),
-                    &mut self.reply_chance,
+                    reply_chance,
                 )),
                 "set_react_chance" => Some(commands::set_react_chance::run(
                     &command.data.options(),
-                    &mut self.react_chance,
+                    react_chance,
                 )),
                 _ => None,
             };
@@ -134,12 +147,15 @@ async fn main() {
 
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler {
-            reply_chance,
-            react_chance,
             db_host: db::DbHost::new(db_url.leak(), db_password.leak()),
         })
         .await
         .expect("Err creating client");
+
+    {
+        let mut data = client.data.write().await;
+        data.insert::<BotState>((reply_chance, react_chance));
+    }
 
     if let Err(e) = client.start().await {
         println!("Client error: {e:?}");
