@@ -32,25 +32,24 @@ struct Handler<'a> {
 #[async_trait]
 impl<'a> EventHandler for Handler<'a> {
     async fn message(&self, ctx: Context, msg: Message) {
-        let data = ctx.data.read().await;
+        // Ignore all bot sent messages
+        if msg.author.bot {
+            return;
+        }
 
-        if let Some((reply_chance, react_chance)) = data.get::<BotState>() {
-            // Ignore all bot sent messages
-            if msg.author.bot {
+        // If mentioned always reply
+        if msg.mentions_me(&ctx.http).await.unwrap_or(false) {
+            if let Ok(reply) = self.db_host.get_rand_reply().await {
+                if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
+                    println!("Error sending reply: {e:?}");
+                }
                 return;
             }
+            println!("DB Error");
+        }
 
-            // If mentioned always reply
-            if msg.mentions_me(&ctx.http).await.unwrap_or(false) {
-                if let Ok(reply) = self.db_host.get_rand_reply().await {
-                    if let Err(e) = msg.reply(&ctx.http, reply.as_str()).await {
-                        println!("Error sending reply: {e:?}");
-                    }
-                    return;
-                }
-                println!("DB Error");
-            }
-
+        let data = ctx.data.read().await;
+        if let Some((reply_chance, react_chance)) = data.get::<BotState>() {
             // Reply if diceroll succeeds
             if dice_roll(reply_chance) {
                 if let Ok(reply) = self.db_host.get_rand_reply().await {

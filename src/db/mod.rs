@@ -8,6 +8,7 @@ pub struct DbHost<'a> {
     reqwest_client: reqwest::Client,
 }
 
+#[allow(dead_code)]
 pub enum DbError {
     ReqwestError(reqwest::Error),
     JsonError(serde_json::Error),
