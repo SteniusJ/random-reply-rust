@@ -98,4 +98,76 @@ impl<'a> DbHost<'a> {
         let parsed: Value = serde_json::from_str(res.text().await?.as_str())?;
         return Ok(parsed["data"][0]["react_emoji"].to_string());
     }
+
+    pub async fn get_reply_page(&self, page: u64) -> Result<Vec<(u64, String)>, DbError> {
+        let res = self
+            .reqwest_client
+            .post(self.host)
+            .body(format!("replyMessages[p{}]", page))
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(DbError::Err(format!(
+                "DB didn't return OK, code: {}",
+                res.status().as_str()
+            )));
+        }
+
+        let parsed: Value = serde_json::from_str(res.text().await?.as_str())?;
+        return Ok(parsed["data"]
+            .as_array()
+            .ok_or(DbError::Err("Json data parse failed".to_string()))?
+            .iter()
+            .map(|v| (v["index"].as_u64().unwrap(), v["reply_message"].to_string()))
+            .collect());
+    }
+
+    pub async fn get_react_page(&self, page: u64) -> Result<Vec<(u64, String)>, DbError> {
+        let res = self
+            .reqwest_client
+            .post(self.host)
+            .body(format!("reactEmojis[p{}]", page))
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(DbError::Err(format!(
+                "DB didn't return OK, code: {}",
+                res.status().as_str()
+            )));
+        }
+
+        let parsed: Value = serde_json::from_str(res.text().await?.as_str())?;
+        return Ok(parsed["data"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|v| (v["index"].as_u64().unwrap(), v["react_emoji"].to_string()))
+            .collect());
+    }
+
+    pub async fn get_game_page(&self, page: u64) -> Result<Vec<(u64, String)>, DbError> {
+        let res = self
+            .reqwest_client
+            .post(self.host)
+            .body(format!("gameMessages[p{}]", page))
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(DbError::Err(format!(
+                "DB didn't return OK, code: {}",
+                res.status().as_str()
+            )));
+        }
+
+        let parsed: Value = serde_json::from_str(res.text().await?.as_str())?;
+        return Ok(parsed["data"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|v| (v["index"].as_u64().unwrap(), v["game_message"].to_string()))
+            .collect());
+    }
 }

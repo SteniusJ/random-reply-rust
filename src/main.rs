@@ -76,7 +76,7 @@ impl<'a> EventHandler for Handler<'a> {
         let mut data = ctx.data.write().await;
 
         if let (Interaction::Command(command), Some((reply_chance, react_chance))) =
-            (interaction, data.get_mut::<BotState>())
+            (&interaction, data.get_mut::<BotState>())
         {
             let content = match command.data.name.as_str() {
                 "game" => commands::game::run(&command.data.options(), &self.db_host).await,
@@ -98,6 +98,15 @@ impl<'a> EventHandler for Handler<'a> {
                 if let Err(e) = command.create_response(&ctx.http, builder).await {
                     println!("Failed to respond to slash command: {e:?}");
                 }
+            }
+        }
+
+        if let Interaction::Component(component) = &interaction {
+            let id_components: Vec<&str> = component.data.custom_id.split(':').collect();
+
+            match id_components[2] {
+                "db" => commands::db::component(&component, &id_components),
+                _ => (),
             }
         }
     }
