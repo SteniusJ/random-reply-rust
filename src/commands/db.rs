@@ -1,5 +1,3 @@
-use std::convert::identity;
-
 use crate::db::*;
 use serenity::builder::*;
 use serenity::model::prelude::*;
@@ -38,7 +36,6 @@ pub async fn run<'a>(
             println!("Could not respond: {err}");
         }
 
-        // Command doesn't need to return a string, rethink this
         return Ok(());
     }
 

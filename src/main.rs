@@ -105,9 +105,11 @@ impl<'a> EventHandler for Handler<'a> {
             let id_components: Vec<&str> = component.data.custom_id.split(':').collect();
 
             match id_components[2] {
-                "db" => commands::db::component(&component, &id_components),
-                _ => (),
-            }
+                "db" => {
+                    Some(commands::db::component(&component, &id_components, &self.db_host).await)
+                }
+                _ => None,
+            };
         }
     }
 
